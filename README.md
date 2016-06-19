@@ -2,6 +2,8 @@
 
 CLI .NET App for mass-downloading images from http://www.imgur.com/
 
+WARNING: A LOT of the content this app finds is NSFW, so use discretion!
+
 App will automatically pause once the download folder has reached 1GB. It can be resumed using the "resume" command, and may also be manually paused using the "pause" command.
 
 Startup Params:
