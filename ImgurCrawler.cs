@@ -67,6 +67,9 @@ namespace ImgurCrawler {
         // Avoid filling up their entire hard-drive with images by setting a maximum size for the output directory, in megabytes
         private static int auto_pause_filesize_ = 1024;
 
+        // Rather than repeatedly scanning the download directory for its size, we can scan it once and simply add each new file's size after download
+        private static int current_download_directory_kb_size_ = 0;
+
         // Optionally, users may choose what string they want to begin on, allowing them to pick up the app again later on in the same spot that they left off
         private static string start_string_ = "";
 
@@ -80,6 +83,9 @@ namespace ImgurCrawler {
 
             if (!Directory.Exists("Download"))
                 Directory.CreateDirectory("Download");
+            else {
+                current_download_directory_kb_size_ = (int)(calculateDirectoryFileSize(new DirectoryInfo("Download")) / 1024);
+            }
 
             // each thread will process the full-depth of a single starting character
             // as we can force a start string, we need to find out where we are starting so each thread can process a unique string
@@ -107,10 +113,6 @@ namespace ImgurCrawler {
 
             Console.WriteLine("Starting at " + start_string_ + " with " + num_threads + " threads! Enter 'help' to view console commands!");
 
-            // since Console.ReadLine() is blocking, we must perform the filesize monitor in another thread
-            var filesize_monitor_thread = new Thread(threadFilesizeMonitor);
-            filesize_monitor_thread.Start();
-
             var download_threads = new Thread[num_threads];
             for (var i = 0; i < num_threads; ++i) {
                 var thread_string = string.Concat(CONSTANTS.IMGUR_URL_CHARACTERS[start_character_index + i]);
@@ -128,12 +130,19 @@ namespace ImgurCrawler {
                 var command = Console.ReadLine();
                 switch (command) {
                     case "pause": {
+                        if (downloading_paused_ == 1)
+                            break;
+
                         Interlocked.Exchange(ref downloading_paused_, 1);
                         Console.WriteLine("PAUSED! Enter 'resume' to continue downloading!");
                         break;
                     }
 
                     case "resume": {
+                        if (downloading_paused_ == 0)
+                            break;
+
+                        current_download_directory_kb_size_ = (int)(calculateDirectoryFileSize(new DirectoryInfo("Download")) / 1024);
                         Interlocked.Exchange(ref downloading_paused_, 0);
                         Console.WriteLine("RESUMED!");
                         break;
@@ -231,35 +240,19 @@ namespace ImgurCrawler {
             }
         }
 
-        private static void threadFilesizeMonitor() {
-            while (true) {
-                Thread.Sleep(500);
-
-                if (downloading_paused_ == 1) {
-                    continue;
-                }
-
-                long directorySize = directoryFileSize(new DirectoryInfo("Download"));
-                int megabytes = (int)(directorySize / 1024 / 1024);
-                if (megabytes > auto_pause_filesize_) {
-                    Console.WriteLine("Download directory has reached " + megabytes + "MB! Downloading has been paused, please clean the directory and use the 'resume' command!");
-                    Interlocked.Exchange(ref downloading_paused_, 1);
-                }
-            }
-        }
-
-        private static long directoryFileSize(DirectoryInfo d) {
+        private static long calculateDirectoryFileSize(DirectoryInfo d) {
             long size = 0;
-            // Add file sizes.
+
             FileInfo[] fis = d.GetFiles();
             foreach (FileInfo fi in fis) {
                 size += fi.Length;
             }
-            // Add subdirectory sizes.
+
             DirectoryInfo[] dis = d.GetDirectories();
             foreach (DirectoryInfo di in dis) {
-                size += directoryFileSize(di);
+                size += calculateDirectoryFileSize(di);
             }
+
             return size;
         }
 
@@ -336,6 +329,13 @@ namespace ImgurCrawler {
                 // skip the "image not found" image
                 if (image.Height == 81 && image.Width == 161) {
                     return;
+                }
+
+                var fileSizeInKB = (int)(response.ContentLength / 1024);
+                var directorySizeInMB = Interlocked.Add(ref current_download_directory_kb_size_, fileSizeInKB) / 1024;
+                if (directorySizeInMB >= auto_pause_filesize_) {
+                    if (Interlocked.CompareExchange(ref downloading_paused_, 1, 0) == 0)
+                        Console.WriteLine("Download directory has reached " + directorySizeInMB + "MB! Downloading has been paused, please clean the directory and use the 'resume' command!");
                 }
 
                 var counter = Interlocked.Increment(ref download_counter_);
