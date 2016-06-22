@@ -321,29 +321,44 @@ namespace ImgurCrawler {
             }
 
             try {
+                var real_extension = "";
+
+                // perform HEAD request to avoid downloads on error images, and get the real extension
                 var request = HttpWebRequest.CreateHttp("http://i.imgur.com/" + image_path + ".jpg");
-                var response = (HttpWebResponse)request.GetResponse();
+                request.AllowAutoRedirect = false;
+                request.Method = "HEAD";
+                using (var response = (HttpWebResponse)request.GetResponse()) {
 
-                var image = Image.FromStream(response.GetResponseStream());
-
-                // skip the "image not found" image
-                if (image.Height == 81 && image.Width == 161) {
-                    return;
+                    if (response.StatusCode == HttpStatusCode.OK) {
+                        var split_string = response.ContentType.Split('/');
+                        if (split_string.Length > 1) {
+                            real_extension = split_string[1];
+                        }
+                    }
                 }
 
-                var fileSizeInKB = (int)(response.ContentLength / 1024);
-                var directorySizeInMB = Interlocked.Add(ref current_download_directory_kb_size_, fileSizeInKB) / 1024;
-                if (directorySizeInMB >= auto_pause_filesize_) {
-                    if (Interlocked.CompareExchange(ref downloading_paused_, 1, 0) == 0)
-                        Console.WriteLine("Download directory has reached " + directorySizeInMB + "MB! Downloading has been paused, please clean the directory and use the 'resume' command!");
-                }
+                if (real_extension.Length > 0) {
+                    request = HttpWebRequest.CreateHttp("http://i.imgur.com/" + image_path + "." + real_extension);
+                    request.AllowAutoRedirect = false;
+                    using (var response = (HttpWebResponse)request.GetResponse()) {
+                        var fileSizeInKB = (int)(response.ContentLength / 1024);
+                        var directorySizeInMB = Interlocked.Add(ref current_download_directory_kb_size_, fileSizeInKB) / 1024;
+                        if (directorySizeInMB >= auto_pause_filesize_) {
+                            if (Interlocked.CompareExchange(ref downloading_paused_, 1, 0) == 0)
+                                Console.WriteLine("Download directory has reached " + directorySizeInMB + "MB! Downloading has been paused, please clean the directory and use the 'resume' command!");
+                        }
 
-                var counter = Interlocked.Increment(ref download_counter_);
-                if ((counter % 25) == 0) {
-                    Console.WriteLine("Done: " + counter);
-                }
+                        var counter = Interlocked.Increment(ref download_counter_);
+                        if ((counter % 25) == 0) {
+                            Console.WriteLine("Done: " + counter);
+                        }
 
-                image.Save("Download\\" + counter + "_" + image_path + ".jpg");
+                        using (var file_stream = File.OpenWrite("Download\\" + counter + "_" + image_path + "." + real_extension)) {
+                            response.GetResponseStream().CopyTo(file_stream);
+                            file_stream.Dispose();
+                        }
+                    }
+                }
             } catch {
                 Console.WriteLine("Exception!!!");
                 return;
