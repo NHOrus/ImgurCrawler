@@ -353,7 +353,7 @@ namespace ImgurCrawler {
                             Console.WriteLine("Done: " + counter);
                         }
 
-                        using (var file_stream = File.OpenWrite("Download\\" + counter + "_" + image_path + "." + real_extension)) {
+                        using (var file_stream = File.OpenWrite("Download" + Path.DirectorySeparatorChar + counter + "_" + image_path + "." + real_extension)) {
                             response.GetResponseStream().CopyTo(file_stream);
                             file_stream.Dispose();
                         }
