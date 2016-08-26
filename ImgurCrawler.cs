@@ -359,8 +359,9 @@ namespace ImgurCrawler {
                         }
                     }
                 }
-            } catch {
+            } catch (Exception ex) {
                 Console.WriteLine("Exception!!!");
+                Console.WriteLine(ex.Message);
                 return;
             }
         }
